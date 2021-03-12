@@ -1,0 +1,11 @@
+.drop {
+  background-image: url("blood.jpg");
+}
+
+.text {
+  text-align: center;
+}
+
+.thick {
+  font-weight: bold;
+}
