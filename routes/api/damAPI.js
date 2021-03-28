@@ -1,738 +1,230 @@
 const router = require("express").Router();
-const express = require("express");
 const dam = require("../../models/dam.model");
+
+const donationTable = {
+  "A+": {
+    DonateTo: ["A+", "AB+"],
+    RecieveFrom: ["A+", "A-", "O+", "O-"],
+  },
+  "O+": {
+    DonateTo: ["O+", "A+", "B+", "AB+"],
+    RecieveFrom: ["O+", "O-"],
+  },
+  "B+": {
+    DonateTo: ["B+", "AB+"],
+    RecieveFrom: ["B+", "B-", "O+", "O-"],
+  },
+  "AB+": {
+    DonateTo: ["AB+"],
+    RecieveFrom: ["A+", "O+", "B+", "AB+", "A-", "O-", "B-", "AB-"],
+  },
+  "A-": {
+    DonateTo: ["A+", "A-", "AB+", "AB-"],
+    RecieveFrom: ["A-", "O-"],
+  },
+  "O-": {
+    DonateTo: ["A+", "O+", "B+", "AB+", "A-", "O-", "B-", "AB-"],
+    RecieveFrom: ["O-"],
+  },
+  "B-": {
+    DonateTo: ["B+", "B-", "AB+", "AB-"],
+    RecieveFrom: ["B-", "O-"],
+  },
+  "AB-": {
+    DonateTo: ["AB+", "AB-"],
+    RecieveFrom: ["AB-", "A-", "B-", "O-"],
+  },
+};
+const donationPriorityQueue = [
+  "O-",
+  "O+",
+  "A-",
+  "B-",
+  "A+",
+  "B+",
+  "AB-",
+  "AB+",
+];
+
 router.post("/addBlood", async (req, res) => {
   try {
-    const { bloodType, amount } = req.body;
-    const blood = await dam.findOne({ bloodType: bloodType });
+    const { bloodType, amount, name, phoneNumber } = req.body;
+    const donator = await dam.findOne({ phoneNumber: phoneNumber });
+    if (donator && donator.name !== name) {
+      return res.status(400).json({
+        title: "Error",
+        msg: "Your donator's phone already exists with a different name",
+      });
+    }
 
-    if (!blood) {
-      let blood = new dam({
+    if (donator && donator.bloodType !== bloodType) {
+      return res.status(400).json({
+        title: "Error",
+        msg: "Your deposit exists with a different blood type",
+      });
+    }
+    if (!donator) {
+      const newDonator = new dam({
         bloodType: bloodType,
         bloodAmount: amount,
+        name: name,
+        phoneNumber: phoneNumber.toString(),
       });
-      await blood.save();
+
+      await newDonator.save();
     } else {
-      blood.bloodAmount = blood.bloodAmount + amount;
-      await blood.save();
+      donator.bloodAmount = donator.bloodAmount + amount;
+      await donator.save();
     }
-    res.json("ok");
+    const test = await dam.find();
+    res.status(200).json({
+      title: "Thanks for donating",
+      msg: "Your response has been successfully registered in the bank",
+    });
   } catch (err) {
     console.error(err.message);
     res.status(400).json("Error: " + err);
   }
 });
 
-router.route("/getBlood").get(async (req, res) => {
+router.route("/getAllDonators").get(async (req, res) => {
   try {
-    blood = await dam.find();
-    res.json(blood);
+    const bloodbank = await dam.find();
+    res.json({ bloodbank });
   } catch (error) {
     res.status(400).json("Error: " + error);
   }
 });
 
-router.route("/getUrgBlood").post(async (req, res) => {
+router.route("/deleteBank").delete(async (req, res) => {
+  await dam.deleteMany();
+  res.status(200).json({ msg: "deleted" });
+});
+router.route("/extractEmergency").post(async (req, res) => {
   try {
-    let { bloodAmount } = req.body;
-    let msg = "got ";
-    blood = await dam.findOne({ bloodType: "O-" });
-    if (blood && blood.bloodAmount > 0) {
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        msg += bloodAmount + " units of blood " + blood.bloodType;
-        res.json(msg);
-      } else {
-        msg += blood.bloodAmount + " units of blood " + blood.bloodType;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
+    const { amount } = req.body;
+    let allBloodDonations = [];
+    let unableToGetAmount = amount;
 
-        await blood.save();
-        if (bloodAmount == 0) res.json(msg);
+    for (let i = 0; i < donationPriorityQueue.length; i++) {
+      const bloodMatchingType = await dam.find({
+        bloodType: donationPriorityQueue[i],
+      });
+      if (bloodMatchingType.length > 0) {
+        const {
+          donatorsList,
+          collectedBloodAmount: remainingBlood,
+        } = await loopOverAndFindDonators(bloodMatchingType, amount);
+
+        allBloodDonations = allBloodDonations.concat([...donatorsList]);
+        unableToGetAmount = remainingBlood;
+        if (remainingBlood === 0) break;
       }
     }
-
-    blood = await dam.findOne({ bloodType: "O+" });
-    if (blood && blood.bloodAmount > 0) {
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        msg += " , " + bloodAmount + " units of blood " + blood.bloodType;
-        console.log("ent2");
-
-        res.json(msg);
-      } else {
-        msg += " , " + blood.bloodAmount + " units of blood " + blood.bloodType;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-        if (bloodAmount == 0) res.json(msg);
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: "A-" });
-    if (blood && blood.bloodAmount > 0) {
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        msg += " , " + bloodAmount + " units of blood " + blood.bloodType;
-        res.json(msg);
-      } else {
-        msg += " , " + blood.bloodAmount + " units of blood " + blood.bloodType;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-
-        blood.bloodAmount = 0;
-        await blood.save();
-        if (bloodAmount == 0) res.json(msg);
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: "B-" });
-    if (blood && blood.bloodAmount > 0) {
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        msg += " , " + bloodAmount + " units of blood " + blood.bloodType;
-        res.json(msg);
-      } else {
-        msg += " , " + blood.bloodAmount + " units of blood " + blood.bloodType;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-        if (bloodAmount == 0) res.json(msg);
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: "A+" });
-    if (blood && blood.bloodAmount > 0) {
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        msg += " , " + bloodAmount + " units of blood " + blood.bloodType;
-        res.json(msg);
-      } else {
-        msg += " , " + blood.bloodAmount + " units of blood " + blood.bloodType;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-
-        blood.bloodAmount = 0;
-        await blood.save();
-        if (bloodAmount == 0) res.json(msg);
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: "B+" });
-    if (blood && blood.bloodAmount > 0) {
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        msg += " , " + bloodAmount + " units of blood " + blood.bloodType;
-        res.json(msg);
-      } else {
-        msg += " , " + blood.bloodAmount + " units of blood " + blood.bloodType;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-        if (bloodAmount == 0) res.json(msg);
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: "AB-" });
-    if (blood && blood.bloodAmount > 0) {
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        msg += " , " + bloodAmount + " units of blood " + blood.bloodType;
-        res.json(msg);
-      } else {
-        msg += " , " + blood.bloodAmount + " units of blood " + blood.bloodType;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-
-        blood.bloodAmount = 0;
-        await blood.save();
-        if (bloodAmount == 0) res.json(msg);
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: "AB+" });
-    if (blood && blood.bloodAmount > 0) {
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        msg += " , " + bloodAmount + " units of blood " + blood.bloodType;
-        res.json(msg);
-      } else {
-        msg += " , " + blood.bloodAmount + " units of blood " + blood.bloodType;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-
-        blood.bloodAmount = 0;
-        await blood.save();
-        if (bloodAmount == 0) res.json(msg);
-      }
-    } else {
-      res.json("no sufficient blood available. only " + msg);
-    }
+    return res.json({ allBloodDonations, remainsToCollect: unableToGetAmount });
   } catch (error) {
+    console.error("error", error);
     res.status(400).json("Error: " + error);
   }
 });
 
-router.post("/subBlood", async (req, res) => {
+const loopOverAndFindDonators = async (bloodMatchingType, amount) => {
+  let collectedBloodAmount = amount;
+  let donatorsList = [];
+
+  for (let i = 0; i < bloodMatchingType.length; i++) {
+    const isDonatorHaveBloodAndBloodRequired =
+      collectedBloodAmount > 0 &&
+      collectedBloodAmount >= bloodMatchingType[i].bloodAmount &&
+      bloodMatchingType[i].bloodAmount !== 0;
+
+    const isDonatorHaveBloodAndBloodRequiredIsSmallerThenDonatorBlood =
+      collectedBloodAmount > 0 &&
+      collectedBloodAmount < bloodMatchingType[i].bloodAmount &&
+      bloodMatchingType[i].bloodAmount !== 0;
+
+    const bloodWasCollected = collectedBloodAmount == 0;
+
+    if (isDonatorHaveBloodAndBloodRequired) {
+      collectedBloodAmount =
+        collectedBloodAmount - bloodMatchingType[i].bloodAmount;
+      const needToCollect = bloodMatchingType[i].bloodAmount;
+      bloodMatchingType[i].bloodAmount = 0;
+      donatorsList.push({
+        _id: bloodMatchingType[i]._id,
+        amountToTake: needToCollect,
+        phoneNumber: bloodMatchingType[i].phoneNumber,
+        name: bloodMatchingType[i].name,
+        bloodType: bloodMatchingType[i].bloodType,
+      });
+      await bloodMatchingType[i].save();
+    } else if (isDonatorHaveBloodAndBloodRequiredIsSmallerThenDonatorBlood) {
+      bloodMatchingType[i].bloodAmount =
+        bloodMatchingType[i].bloodAmount - collectedBloodAmount;
+      const needToCollect = collectedBloodAmount;
+      donatorsList.push({
+        _id: bloodMatchingType[i]._id,
+        amountToTake: needToCollect,
+        phoneNumber: bloodMatchingType[i].phoneNumber,
+        name: bloodMatchingType[i].name,
+        bloodType: bloodMatchingType[i].bloodType,
+      });
+      await bloodMatchingType[i].save();
+      collectedBloodAmount = 0;
+      break;
+    } else if (bloodWasCollected) {
+      break;
+    }
+  }
+  return { donatorsList, collectedBloodAmount };
+};
+
+router.route("/extractBloodDonation").post(async (req, res) => {
   try {
-    let { bloodType, bloodAmount } = req.body;
-    let result, result2, result3, result4, result5, result6, result7, result8;
-    const origBloodAmount = bloodAmount;
+    const { amount, bloodType } = req.body;
+    const bloodMatchingType = await dam.find({ bloodType });
+    let allBloodDonations = [];
+    let unableToGetAmount = amount;
 
-    let blood = await dam.findOne({ bloodType: bloodType });
-
-    if (blood && blood.bloodAmount - bloodAmount > -1) {
-      blood.bloodAmount = blood.bloodAmount - bloodAmount;
-      await blood.save();
-      res.json("got " + bloodAmount + " units of blood " + bloodType);
+    if (bloodMatchingType.length > 0) {
+      const {
+        donatorsList,
+        collectedBloodAmount: remainsToCollect,
+      } = await loopOverAndFindDonators(bloodMatchingType, amount);
+      allBloodDonations = allBloodDonations.concat([...donatorsList]);
+      unableToGetAmount = remainsToCollect;
     }
-    if (bloodType === "O-") {
-      bloodAmount = bloodAmount - blood.bloodAmount;
-      result = blood.bloodAmount;
-      blood.bloodAmount = 0;
-      await blood.save();
-      res.json("got " + result + " units of O- available");
+    const efficientQueue = donationPriorityQueue.reverse();
+
+    if (unableToGetAmount == 0) {
+      return res.json({
+        allBloodDonations,
+        remainsToCollect: unableToGetAmount,
+      });
     }
-    blood = await dam.findOne({ bloodType: bloodType });
-
-    if (bloodType === "A-") {
-      bloodAmount = bloodAmount - blood.bloodAmount;
-      result = blood.bloodAmount;
-      blood.bloodAmount = 0;
-      await blood.save();
-
-      blood = await dam.findOne({ bloodType: "O-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type A- and " +
-            bloodAmount +
-            " units of type O-"
-        );
-      } else {
-        result2 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type A- and only " +
-            result2 +
-            " units of type O-"
-        );
+    for (let i = 0; i < efficientQueue.length; i++) {
+      if (donationTable[efficientQueue[i]].DonateTo.includes(bloodType)) {
+        const bloodMatchingType = await dam.find({
+          bloodType: efficientQueue[i],
+        });
+        if (bloodMatchingType.length > 0) {
+          const {
+            donatorsList,
+            collectedBloodAmount: remainingBlood,
+          } = await loopOverAndFindDonators(
+            bloodMatchingType,
+            unableToGetAmount
+          );
+          allBloodDonations = allBloodDonations.concat([...donatorsList]);
+          unableToGetAmount = remainingBlood;
+          if (remainingBlood === 0) break;
+        }
       }
     }
-
-    blood = await dam.findOne({ bloodType: bloodType });
-
-    if (bloodType === "B-") {
-      bloodAmount = bloodAmount - blood.bloodAmount;
-      result = blood.bloodAmount;
-      blood.bloodAmount = 0;
-      await blood.save();
-
-      blood = await dam.findOne({ bloodType: "O-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type B- and " +
-            bloodAmount +
-            " units of type O-"
-        );
-      } else {
-        result2 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type B- and only " +
-            result2 +
-            " units of type O-"
-        );
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: bloodType });
-
-    if (bloodType === "O+") {
-      bloodAmount = bloodAmount - blood.bloodAmount;
-      result = blood.bloodAmount;
-      blood.bloodAmount = 0;
-      await blood.save();
-
-      blood = await dam.findOne({ bloodType: "O-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type O+ and " +
-            bloodAmount +
-            " units of type O-"
-        );
-      } else {
-        result2 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type O+ and only " +
-            result2 +
-            " units of type O-"
-        );
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: bloodType });
-
-    if (bloodType === "A+") {
-      bloodAmount = bloodAmount - blood.bloodAmount;
-      result = blood.bloodAmount;
-      blood.bloodAmount = 0;
-      await blood.save();
-
-      blood = await dam.findOne({ bloodType: "O-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type A+ and " +
-            bloodAmount +
-            " units of type O-"
-        );
-      } else {
-        result2 = blood.bloodAmount;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-      }
-
-      blood = await dam.findOne({ bloodType: "A-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type A+, " +
-            result2 +
-            " units of type O-, " +
-            bloodAmount +
-            " units of type A-"
-        );
-      } else {
-        result3 = blood.bloodAmount;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-      }
-      blood = await dam.findOne({ bloodType: "O+" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type A+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type A-, " +
-            bloodAmount +
-            " units of type O+"
-        );
-      } else {
-        result4 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type A+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type A- and only " +
-            result4 +
-            " units of type O+"
-        );
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: bloodType });
-
-    if (bloodType === "B+") {
-      bloodAmount = bloodAmount - blood.bloodAmount;
-      result = blood.bloodAmount;
-      blood.bloodAmount = 0;
-      await blood.save();
-
-      blood = await dam.findOne({ bloodType: "O-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type B+ and " +
-            bloodAmount +
-            " units of type O-"
-        );
-      } else {
-        result2 = blood.bloodAmount;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-      }
-
-      blood = await dam.findOne({ bloodType: "B-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type B+, " +
-            result2 +
-            " units of type O-, " +
-            bloodAmount +
-            " units of type B-"
-        );
-      } else {
-        result3 = blood.bloodAmount;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-      }
-      blood = await dam.findOne({ bloodType: "O+" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type A+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B-, " +
-            bloodAmount +
-            " units of type O+"
-        );
-      } else {
-        result4 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type A+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B- and only " +
-            result4 +
-            " units of type O+"
-        );
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: bloodType });
-
-    if (bloodType === "AB-") {
-      bloodAmount = bloodAmount - blood.bloodAmount;
-      result = blood.bloodAmount;
-      blood.bloodAmount = 0;
-      await blood.save();
-
-      blood = await dam.findOne({ bloodType: "O-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB- and " +
-            bloodAmount +
-            " units of type O-"
-        );
-      } else {
-        result2 = blood.bloodAmount;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-      }
-
-      blood = await dam.findOne({ bloodType: "B-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB-, " +
-            result2 +
-            " units of type O-, " +
-            bloodAmount +
-            " units of type B-"
-        );
-      } else {
-        result3 = blood.bloodAmount;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-      }
-      blood = await dam.findOne({ bloodType: "A-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB-, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B-, " +
-            bloodAmount +
-            " units of type A-"
-        );
-      } else {
-        result4 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB-, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B- and only " +
-            result4 +
-            " units of type A-"
-        );
-      }
-    }
-
-    blood = await dam.findOne({ bloodType: bloodType });
-
-    if (bloodType === "AB+") {
-      bloodAmount = bloodAmount - blood.bloodAmount;
-      result = blood.bloodAmount;
-      blood.bloodAmount = 0;
-      await blood.save();
-
-      blood = await dam.findOne({ bloodType: "O-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB+, " +
-            bloodAmount +
-            " units of type O-"
-        );
-      } else {
-        result2 = blood.bloodAmount;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-      }
-
-      blood = await dam.findOne({ bloodType: "B-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB+, " +
-            result2 +
-            " units of type O-, " +
-            bloodAmount +
-            " units of type B-"
-        );
-      } else {
-        result3 = blood.bloodAmount;
-        bloodAmount = bloodAmount - blood.bloodAmount;
-        blood.bloodAmount = 0;
-
-        await blood.save();
-      }
-      blood = await dam.findOne({ bloodType: "A-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B-, " +
-            bloodAmount +
-            " units of type A-"
-        );
-      } else {
-        result4 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-      }
-
-      blood = await dam.findOne({ bloodType: "O+" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B-, " +
-            result4 +
-            " units of type A-" +
-            bloodAmount +
-            " units of type O+"
-        );
-      } else {
-        result5 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-      }
-
-      blood = await dam.findOne({ bloodType: "A+" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B-, " +
-            result4 +
-            " units of type A-" +
-            result5 +
-            " units of type O+" +
-            bloodAmount +
-            " units of type A+"
-        );
-      } else {
-        result6 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-      }
-
-      blood = await dam.findOne({ bloodType: "B+" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B-, " +
-            result4 +
-            " units of type A-" +
-            result5 +
-            " units of type O+" +
-            result6 +
-            " units of type A+" +
-            bloodAmount +
-            " units of type B+"
-        );
-      } else {
-        result7 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-      }
-
-      blood = await dam.findOne({ bloodType: "AB-" });
-      if (blood.bloodAmount >= bloodAmount) {
-        blood.bloodAmount = blood.bloodAmount - bloodAmount;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B-, " +
-            result4 +
-            " units of type A-" +
-            result5 +
-            " units of type O+" +
-            result6 +
-            " units of type A+" +
-            result7 +
-            " units of type B+" +
-            bloodAmount +
-            " units of type AB-"
-        );
-      } else {
-        result8 = blood.bloodAmount;
-        blood.bloodAmount = 0;
-        await blood.save();
-        res.json(
-          "got " +
-            result +
-            " units of type AB+, " +
-            result2 +
-            " units of type O-, " +
-            result3 +
-            " units of type B-, " +
-            result4 +
-            " units of type A-," +
-            result5 +
-            " units of type O+," +
-            result6 +
-            " units of type A+," +
-            result7 +
-            " units of type B+, and only" +
-            bloodAmount +
-            " units of type AB-"
-        );
-      }
-    }
-  } catch (err) {
-    console.error(err.message);
-    res.status(400).json("Error: " + err);
+    return res.json({ allBloodDonations, remainsToCollect: unableToGetAmount });
+  } catch (error) {
+    console.log("error", error);
+    res.status(400).json("Error: " + error);
   }
 });
 

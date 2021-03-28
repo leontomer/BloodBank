@@ -37,7 +37,7 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://localhost:5000",
+  "proxy": "http://localhost:6000",
   "devDependencies": {
     "web-vitals": "^1.1.0"
   }
