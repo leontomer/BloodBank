@@ -74,7 +74,7 @@ export default function DonateBlood() {
       startLoading();
       const res = await axios.post("/dam/addBlood", {
         bloodType: bloodType,
-        amount: amount,
+        amount: parseInt(amount),
         name: name,
         phoneNumber: phoneNumber,
       });
@@ -158,6 +158,7 @@ export default function DonateBlood() {
               type="number"
               label="Donation amount"
               name="amount"
+              InputProps={{ inputProps: { min: 1 } }}
               onChange={onChange}
               required
               value={amount}

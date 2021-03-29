@@ -94,7 +94,7 @@ export default function GetUrgentBlood() {
               <TextField
                 type="number"
                 value={amount}
-                min="1"
+                InputProps={{ inputProps: { min: 1 } }}
                 name="amount"
                 required
                 onChange={onChange}
