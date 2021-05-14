@@ -19,9 +19,9 @@ connection.once("open", () => {
 });
 
 const damAPI = require("./routes/api/damAPI");
-
+const authAPI = require("./routes/api/authAPI");
 app.use("/dam", damAPI);
-
+app.use("/auth", authAPI);
 app.listen(port, () => {
   console.log("Server is running on port:", port);
 });

@@ -1,6 +1,13 @@
 const router = require("express").Router();
-const dam = require("../../models/dam.model");
-
+const dam = require("../../models/donate.model");
+const damBank = require("../../models/allblood.model");
+const logs = require("../../models/log.model");
+const auth = require("../../middleware/auth");
+const user = require("../../models/user.model");
+const { findById } = require("../../models/donate.model");
+const adminAuth = require("../../middleware/adminAuth");
+const studentAuth = require("../../middleware/studentAuth");
+//const { findOne } = require("../../models/donate.model");
 const donationTable = {
   "A+": {
     DonateTo: ["A+", "AB+"],
@@ -46,7 +53,7 @@ const donationPriorityQueue = [
   "AB+",
 ];
 
-router.post("/addBlood", async (req, res) => {
+router.post("/addBlood", auth, async (req, res) => {
   try {
     const { bloodType, amount, name, phoneNumber } = req.body;
     const donator = await dam.findOne({ phoneNumber: phoneNumber });
@@ -70,13 +77,26 @@ router.post("/addBlood", async (req, res) => {
         name: name,
         phoneNumber: phoneNumber.toString(),
       });
-
+      const blood = await damBank.findOne({ bloodType: bloodType });
+      if (!blood) {
+        let blood = new damBank({
+          bloodType: bloodType,
+          bloodAmount: amount,
+        });
+        await blood.save();
+      } else {
+        blood.bloodAmount = blood.bloodAmount + amount;
+        await blood.save();
+      }
       await newDonator.save();
     } else {
       donator.bloodAmount = donator.bloodAmount + amount;
       await donator.save();
     }
-    const test = await dam.find();
+    MyUser = await user.findById(req.user.id);
+
+    newlog = new Log({ actionName: "Donate", user: MyUser.email });
+    await newlog.save();
     res.status(200).json({
       title: "Thanks for donating",
       msg: "Your response has been successfully registered in the bank",
@@ -87,7 +107,7 @@ router.post("/addBlood", async (req, res) => {
   }
 });
 
-router.route("/getAllDonators").get(async (req, res) => {
+router.get("/getAllDonators", adminAuth, async (req, res) => {
   try {
     const bloodbank = await dam.find();
     res.json({ bloodbank });
@@ -96,11 +116,15 @@ router.route("/getAllDonators").get(async (req, res) => {
   }
 });
 
-router.route("/deleteBank").delete(async (req, res) => {
+router.route("/deleteBank").delete(adminAuth, async (req, res) => {
   await dam.deleteMany();
+  await damBank.deleteMany();
+  MyUser = await user.findById(req.user.id);
+  newlog = new Log({ actionName: "Delete Bank Data", user: MyUser.email });
+  await newlog.save();
   res.status(200).json({ msg: "deleted" });
 });
-router.route("/extractEmergency").post(async (req, res) => {
+router.route("/extractEmergency").post(auth, async (req, res) => {
   try {
     const { amount } = req.body;
     let allBloodDonations = [];
@@ -111,16 +135,21 @@ router.route("/extractEmergency").post(async (req, res) => {
         bloodType: donationPriorityQueue[i],
       });
       if (bloodMatchingType.length > 0) {
-        const {
-          donatorsList,
-          collectedBloodAmount: remainingBlood,
-        } = await loopOverAndFindDonators(bloodMatchingType, amount);
+        const { donatorsList, collectedBloodAmount: remainingBlood } =
+          await loopOverAndFindDonators(bloodMatchingType, amount);
 
         allBloodDonations = allBloodDonations.concat([...donatorsList]);
         unableToGetAmount = remainingBlood;
         if (remainingBlood === 0) break;
       }
     }
+    MyUser = await user.findById(req.user.id);
+
+    newlog = new Log({
+      actionName: "Got Blood For Emergency",
+      user: MyUser.email,
+    });
+    await newlog.save();
     return res.json({ allBloodDonations, remainsToCollect: unableToGetAmount });
   } catch (error) {
     console.error("error", error);
@@ -146,6 +175,11 @@ const loopOverAndFindDonators = async (bloodMatchingType, amount) => {
     const bloodWasCollected = collectedBloodAmount == 0;
 
     if (isDonatorHaveBloodAndBloodRequired) {
+      blood = await damBank.findOne({
+        bloodType: bloodMatchingType[i].bloodType,
+      });
+      blood.bloodAmount = blood.bloodAmount - amount;
+      await blood.save();
       collectedBloodAmount =
         collectedBloodAmount - bloodMatchingType[i].bloodAmount;
       const needToCollect = bloodMatchingType[i].bloodAmount;
@@ -161,6 +195,11 @@ const loopOverAndFindDonators = async (bloodMatchingType, amount) => {
     } else if (isDonatorHaveBloodAndBloodRequiredIsSmallerThenDonatorBlood) {
       bloodMatchingType[i].bloodAmount =
         bloodMatchingType[i].bloodAmount - collectedBloodAmount;
+      blood = await damBank.findOne({
+        bloodType: bloodMatchingType[i].bloodType,
+      });
+      blood.bloodAmount = blood.bloodAmount - amount;
+      await blood.save();
       const needToCollect = collectedBloodAmount;
       donatorsList.push({
         _id: bloodMatchingType[i]._id,
@@ -179,7 +218,32 @@ const loopOverAndFindDonators = async (bloodMatchingType, amount) => {
   return { donatorsList, collectedBloodAmount };
 };
 
-router.route("/extractBloodDonation").post(async (req, res) => {
+router.route("/getBlood").get(studentAuth, async (req, res) => {
+  try {
+    blood = await damBank.find();
+    res.json(blood);
+  } catch (error) {
+    res.status(400).json("Error: " + error);
+  }
+});
+
+router.route("/getLogs").get(adminAuth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    finalLogs = await logs.find({
+      actionDate: {
+        $gte: startDate,
+        $lt: endDate,
+      },
+    });
+
+    res.json(finalLogs);
+  } catch (error) {
+    res.status(400).json("Error: " + error);
+  }
+});
+
+router.route("/extractBloodDonation").post(adminAuth, async (req, res) => {
   try {
     const { amount, bloodType } = req.body;
     const bloodMatchingType = await dam.find({ bloodType });
@@ -187,16 +251,18 @@ router.route("/extractBloodDonation").post(async (req, res) => {
     let unableToGetAmount = amount;
 
     if (bloodMatchingType.length > 0) {
-      const {
-        donatorsList,
-        collectedBloodAmount: remainsToCollect,
-      } = await loopOverAndFindDonators(bloodMatchingType, amount);
+      const { donatorsList, collectedBloodAmount: remainsToCollect } =
+        await loopOverAndFindDonators(bloodMatchingType, amount);
       allBloodDonations = allBloodDonations.concat([...donatorsList]);
       unableToGetAmount = remainsToCollect;
     }
     const efficientQueue = donationPriorityQueue.reverse();
 
     if (unableToGetAmount == 0) {
+      MyUser = await user.findById(req.user.id);
+
+      newlog = new Log({ actionName: "Got Blood", user: MyUser.email });
+      await newlog.save();
       return res.json({
         allBloodDonations,
         remainsToCollect: unableToGetAmount,
@@ -208,19 +274,18 @@ router.route("/extractBloodDonation").post(async (req, res) => {
           bloodType: efficientQueue[i],
         });
         if (bloodMatchingType.length > 0) {
-          const {
-            donatorsList,
-            collectedBloodAmount: remainingBlood,
-          } = await loopOverAndFindDonators(
-            bloodMatchingType,
-            unableToGetAmount
-          );
+          const { donatorsList, collectedBloodAmount: remainingBlood } =
+            await loopOverAndFindDonators(bloodMatchingType, unableToGetAmount);
           allBloodDonations = allBloodDonations.concat([...donatorsList]);
           unableToGetAmount = remainingBlood;
           if (remainingBlood === 0) break;
         }
       }
     }
+    MyUser = await user.findById(req.user.id);
+
+    newlog = new Log({ actionName: "Got Blood", user: MyUser.email });
+    await newlog.save();
     return res.json({ allBloodDonations, remainsToCollect: unableToGetAmount });
   } catch (error) {
     console.log("error", error);

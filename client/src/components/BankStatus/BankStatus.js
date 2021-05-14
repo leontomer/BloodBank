@@ -1,130 +1,62 @@
-import React, { useEffect, useState } from "react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Button,
-  withStyles,
-  makeStyles,
-} from "@material-ui/core";
-import axios from "axios";
-import { useLoader } from "../../Contexts/LoaderContext";
-import { useModal } from "../../Contexts/ModalContext";
+import React, { useState, useEffect } from "react";
+import Paper from "@material-ui/core/Paper";
+import Table from "@material-ui/core/Table";
+import TableBody from "@material-ui/core/TableBody";
+import TableCell from "@material-ui/core/TableCell";
+import TableContainer from "@material-ui/core/TableContainer";
+import TableHead from "@material-ui/core/TableHead";
+import TableRow from "@material-ui/core/TableRow";
+import ReactToPdf from "react-to-pdf";
+import { makeStyles } from "@material-ui/core/styles";
 
-const StyledTableCell = withStyles((theme) => ({
-  head: {
-    backgroundColor: theme.palette.common.black,
-    color: theme.palette.common.white,
-  },
-  body: {
-    fontSize: 14,
-  },
-}))(TableCell);
+const axios = require("axios");
 
-const StyledTableRow = withStyles((theme) => ({
-  root: {
-    "&:nth-of-type(odd)": {
-      backgroundColor: theme.palette.background.default,
-    },
-  },
-}))(TableRow);
+export default function GetBlood(props) {
+  const [blood, setBlood] = useState([]);
+  const ref = React.createRef();
 
-function createData(name, calories, fat, carbs, protein) {
-  return { name, calories, fat, carbs, protein };
-}
-
-const useStyles = makeStyles({
-  table: {
-    maxWidth: 1000,
-  },
-});
-
-export default function CustomizedTables() {
-  const classes = useStyles();
-  const { startLoading, finishLoading } = useLoader();
-  const { openModal } = useModal();
-  const [allDonators, setAllDonators] = useState([]);
-  const clearDonators = async () => {
-    try {
-      startLoading();
-      await axios.delete("/dam/deleteBank");
-      openModal(
-        "Delete was successfull",
-        "All the donators were removed from the bank"
-      );
-      fetchData();
-      finishLoading();
-    } catch (error) {
-      console.log("error", error);
-      finishLoading();
-      openModal("Error", "Something went wrong");
-    }
-  };
-  const fetchData = async () => {
-    try {
-      startLoading();
-      const res = await axios.get("/dam/getAllDonators");
-      setAllDonators([...res.data.bloodbank]);
-      finishLoading();
-    } catch (error) {
-      console.log("error", error);
-      finishLoading();
-    }
-  };
   useEffect(() => {
-    fetchData();
+    (async function getFields() {
+      const blood = await axios.get("/dam/getBlood");
+      console.log(blood.data);
+      setBlood(blood.data);
+    })();
   }, []);
 
-  const allData = allDonators.map((donator) =>
-    createData(
-      donator.name,
-      donator._id,
-      donator.phoneNumber,
-      donator.bloodAmount,
-      donator.bloodType
-    )
-  );
+  const useStyles = makeStyles({
+    table: {
+      maxWidth: 650,
+    },
+  });
+  const classes = useStyles();
+
   return (
-    <TableContainer style={{ width: 1000, marginLeft: 400, marginTop: 100 }}>
-      <Button
-        style={{
-          background: "  #e74c3c  ",
-          color: "white",
-          fontWeight: "bold",
-        }}
-        onClick={clearDonators}
-      >
-        Clear donators
-      </Button>
-      <Table className={classes.table} aria-label="customized table">
-        <TableHead>
-          <TableRow>
-            <StyledTableCell>Donators Name</StyledTableCell>
-            <StyledTableCell align="right">id</StyledTableCell>
-            <StyledTableCell align="right">phone</StyledTableCell>
-            <StyledTableCell align="right">
-              current blood amount
-            </StyledTableCell>
-            <StyledTableCell align="right">blood type</StyledTableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {allData.map((row) => (
-            <StyledTableRow key={row.name}>
-              <StyledTableCell component="th" scope="row">
-                {row.name}
-              </StyledTableCell>
-              <StyledTableCell align="right">{row.calories}</StyledTableCell>
-              <StyledTableCell align="right">{row.fat}</StyledTableCell>
-              <StyledTableCell align="right">{row.carbs}</StyledTableCell>
-              <StyledTableCell align="right">{row.protein}</StyledTableCell>
-            </StyledTableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+    <div>
+      <ReactToPdf targetRef={ref} filename="div-blue.pdf">
+        {({ toPdf }) => <button onClick={toPdf}>Generate pdf</button>}
+      </ReactToPdf>
+      <TableContainer component={Paper} ref={ref} className={classes.table}>
+        <div>
+          <Table aria-label="simple table" className={classes.table}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Blood Type</TableCell>
+                <TableCell align="right">Amount</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {blood.map((row) => (
+                <TableRow key={row.bloodType}>
+                  <TableCell component="th" scope="row">
+                    {row.bloodType}
+                  </TableCell>
+                  <TableCell align="right">{row.bloodAmount}</TableCell>
+                </TableRow>
+              ))}{" "}
+            </TableBody>{" "}
+          </Table>{" "}
+        </div>
+      </TableContainer>
+    </div>
   );
 }
