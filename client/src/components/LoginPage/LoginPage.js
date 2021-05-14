@@ -64,7 +64,7 @@ export default function LoginPage({ history }) {
       const res = await axios.post("/auth/login", loginData);
       if (res.data) login(res.data);
       finishLoading();
-      console.log("hereee", res.data);
+
       if (res.data.role == "Student") {
         history.push("/BankStatus");
       } else {

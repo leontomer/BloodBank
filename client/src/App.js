@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { BrowserRouter as Router, Route, Switch } from "react-router-dom";
 
 import donateBlood from "./components/DonateBlood/DonateBlood";
@@ -16,11 +16,23 @@ import { useAuth } from "./Contexts/auth-context";
 import setAuthToken from "./utilities/setAuthToken";
 import PrivateRoute from "./components/Routes/PrivateRoute";
 import getLogs from "./components/getLogs/getLogs";
+import axios from "axios";
+
 function App() {
-  const { loggedIn } = useAuth();
   if (localStorage.token) {
     setAuthToken(localStorage.token);
   }
+
+  const [role, seRole] = React.useState("");
+  const { isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    (async function getFields() {
+      const role = await axios.get("/auth/getRole");
+      seRole(role.data);
+    })();
+  }, [isAuthenticated]);
+
   return (
     <BloodBankProvider>
       <Router>
@@ -31,12 +43,24 @@ function App() {
           <Route exact path="/" component={LoginPage} />
           <Route exact path="/login" component={LoginPage} />
           <Route exact path="/register" component={RegisterPage} />
-          <PrivateRoute exact path="/donateBlood" component={donateBlood} />
-          <PrivateRoute exact path="/getBlood" component={getBlood} />
-          <PrivateRoute exact path="/getUrgBlood" component={getUrgBlood} />
-          <PrivateRoute exact path="/BankStatus" component={BankStatus} />
-          <PrivateRoute exact path="/Donators" component={Donators} />
-          <PrivateRoute exact path="/GetLogs" component={getLogs} />
+          {(role == "Admin" || role == "User") && (
+            <PrivateRoute exact path="/donateBlood" component={donateBlood} />
+          )}
+          {(role == "Admin" || role == "User") && (
+            <PrivateRoute exact path="/getBlood" component={getBlood} />
+          )}
+          {(role == "Admin" || role == "User") && (
+            <PrivateRoute exact path="/getUrgBlood" component={getUrgBlood} />
+          )}
+          {(role == "Admin" || role == "User" || role == "Student") && (
+            <PrivateRoute exact path="/BankStatus" component={BankStatus} />
+          )}
+          {role == "Admin" && (
+            <PrivateRoute exact path="/Donators" component={Donators} />
+          )}
+          {role == "Admin" && (
+            <PrivateRoute exact path="/GetLogs" component={getLogs} />
+          )}
         </Switch>
       </Router>
     </BloodBankProvider>

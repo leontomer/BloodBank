@@ -3,9 +3,12 @@ import React, { createContext, useEffect, useState } from "react";
 const AuthContext = createContext({});
 
 const AuthProvider = (props) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    localStorage.getItem("token") ? true : false
+  );
 
   const login = (payload) => {
+    console.log(payload.token);
     localStorage.setItem("token", payload.token);
     setIsAuthenticated(true);
   };
