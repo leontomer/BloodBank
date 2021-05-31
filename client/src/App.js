@@ -11,7 +11,6 @@ import BankStatus from "./components/BankStatus/BankStatus";
 import Donators from "./components/Donators/Donators";
 import { BloodBankProvider } from "./Contexts/BloodBankContext";
 import LoginPage from "./components/LoginPage/LoginPage";
-import RegisterPage from "./components/RegisterPage/RegisterPage";
 import { useAuth } from "./Contexts/auth-context";
 import setAuthToken from "./utilities/setAuthToken";
 import PrivateRoute from "./components/Routes/PrivateRoute";
@@ -42,7 +41,6 @@ function App() {
         <Switch>
           <Route exact path="/" component={LoginPage} />
           <Route exact path="/login" component={LoginPage} />
-          <Route exact path="/register" component={RegisterPage} />
           {(role == "Admin" || role == "User") && (
             <PrivateRoute exact path="/donateBlood" component={donateBlood} />
           )}

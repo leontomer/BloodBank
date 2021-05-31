@@ -129,11 +129,7 @@ export default function LoginPage({ history }) {
           </Button>
 
           <Grid container>
-            <Grid item xs>
-              <Link to="/register" variant="body2">
-                {"Sign up"}
-              </Link>
-            </Grid>
+            <Grid item xs></Grid>
           </Grid>
         </form>
       </div>
